@@ -4,6 +4,8 @@
 // @version      2.0
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
+// @updateURL    https://github.com/gaoj8174-prog/velocity-award-scanner/raw/main/velocity-award-scanner.user.js
+// @downloadURL  https://github.com/gaoj8174-prog/velocity-award-scanner/raw/main/velocity-award-scanner.user.js
 // @match        https://book.virginaustralia.com/dx/VADX/*
 // @grant        GM_setValue
 // @grant        GM_getValue
