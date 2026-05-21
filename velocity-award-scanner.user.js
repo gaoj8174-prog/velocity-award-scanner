@@ -287,7 +287,7 @@
   root.innerHTML = `
     <div id="header">
       <span class="logo">✈</span>
-      <span class="title">Velocity Award Scanner</span>
+      <span class="title">Velocity Award Scanner <span style="font-size:10px;font-weight:400;color:#666;margin-left:4px">v1.4</span></span>
       <span class="chevron">▲</span>
     </div>
 
