@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         Velocity Award Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
-// @match        https://book.virginaustralia.com/*
-// @match        https://www.velocityfrequentflyer.com/*
-// @match        https://experience.velocityfrequentflyer.com/*
+// @match        https://book.virginaustralia.com/dx/VADX/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -785,9 +783,10 @@
           if (hits.length > 0) addResultsIncremental(date, routeKey, hits);
         } catch (e) {
           errors++;
-          console.warn('[VA Scanner]', date, routeKey, e.message);
+          console.warn(`[VA Scanner] Error ${errors}/5 — ${date} ${routeKey}:`, e.message);
           if (errors >= 5) {
-            setStatus('Too many errors. Stopping.', '#e05c5c');
+            console.error('[VA Scanner] Stopped after 5 errors. Possible causes: API rate limiting, missing x-sabre-storefront header, or network issue. Last storefront value:', getCapturedStorefront());
+            setStatus('Stopped after 5 errors — check console (F12) for details.', '#e05c5c');
             break outer;
           }
         }

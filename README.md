@@ -47,7 +47,7 @@ That's it. The scanner panel will appear at the bottom-right corner of the page 
 
 ## How to use
 
-1. Go to [book.virginaustralia.com](https://book.virginaustralia.com) and do **one flight search** on the page (this initialises the API connection the script needs)
+1. Go to [book.virginaustralia.com](https://book.virginaustralia.com) and do **one flight search** — this takes you to the `/dx/VADX/` booking page where the scanner activates, and also initialises the API connection it needs
 2. The scanner panel appears at the bottom-right — click the header bar to expand/collapse it
 3. Enter your **origins** and **destinations** (comma-separated IATA codes, e.g. `SYD,MEL` and `HND,NRT`)
 4. Set your **date range**
@@ -67,6 +67,34 @@ Results appear live as each date is checked. Click any coloured flight pill to s
 | `RF` | First Reward |
 
 Non-stop flights are highlighted with a green border.
+
+---
+
+## Troubleshooting
+
+### Scanner panel not showing up
+
+The most common cause is Chrome blocking the Tampermonkey extension from running on the page.
+
+1. Click the **Tampermonkey icon** (the dark circle) in your browser toolbar
+2. If you see a banner saying **"Please enable the `Allow User Scripts` extension setting"** — click it and follow the prompt to allow the extension on this site
+3. Reload the page — the scanner panel should appear at the bottom-right corner
+
+If the banner is not shown, go to **chrome://extensions** → find Tampermonkey → click **Details** → make sure **"Allow on all sites"** or access to `book.virginaustralia.com` is enabled.
+
+> **Note:** The scanner only activates on `book.virginaustralia.com/dx/VADX/` — the booking flow page. Navigate there first by doing a flight search on the Virgin Australia website.
+
+---
+
+### Scan stops after a few requests
+
+If scanning stops early with a "Stopped after 5 errors" message, open **DevTools → Console (F12)** and look for `[VA Scanner]` log entries. Common causes:
+
+| Symptom in console | Cause | Fix |
+|--------------------|-------|-----|
+| `Network error` | GM_xmlhttpRequest blocked | Check Tampermonkey has permission for `book.virginaustralia.com` |
+| `JSON parse error` | API returned non-JSON (e.g. login redirect) | Do a fresh flight search on the page to re-establish the session, then scan again |
+| `Context creation failed` | Missing `x-sabre-storefront` header | Navigate to the flight results page first so the scanner can capture the API token |
 
 ---
 
