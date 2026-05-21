@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Velocity Award Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
 // @match        https://book.virginaustralia.com/dx/VADX/*
@@ -69,6 +69,8 @@
   let scanRoutes = [];
   let totalRequests = 0;
   let completedRequests = 0;
+  let activeTab = null;
+  let autoScroll = true;
 
   // ─── SHADOW DOM CONTAINER ───────────────────────────────────────────────────
   const host = document.createElement('div');
@@ -146,6 +148,26 @@
     .filter-chip:not(.on) .chip-name { text-decoration: line-through; }
     .filter-chip input { display: none; }
 
+    /* ── tab bar ── */
+    #tab-bar {
+      display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 5px;
+      padding: 6px 10px; border-bottom: 1px solid #2a1010; flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    #tab-bar:empty { display: none; }
+    #tab-bar::-webkit-scrollbar { display: none; }
+    .tab {
+      background: #1a0a0a; border: 1px solid #2a1010; border-radius: 5px;
+      color: #666; cursor: pointer; font-size: 11px; font-weight: 600;
+      padding: 4px 10px; white-space: nowrap; flex-shrink: 0; transition: all 0.15s;
+    }
+    .tab:hover { color: #e8e0e0; border-color: #3a1a1a; }
+    .tab.active { background: #c0392b; border-color: #c0392b; color: #fff; }
+    .tab-count {
+      background: rgba(0,0,0,0.3); border-radius: 3px;
+      padding: 0 4px; margin-left: 4px; font-size: 10px;
+    }
+
     /* ── footer bar ── */
     #footer {
       display: flex; align-items: center; gap: 8px;
@@ -195,10 +217,7 @@
       display: flex; flex-wrap: wrap; gap: 5px;
       align-items: center; padding: 2px 0 6px 4px;
     }
-    .route-label {
-      font-size: 10px; color: #555; min-width: 68px;
-      align-self: flex-start; padding-top: 4px;
-    }
+    .route-label { display: none; }
     .pills { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; }
 
     .pill {
@@ -312,6 +331,8 @@
 
     <div id="progress-wrap"><div id="progress-bar"></div></div>
 
+    <div id="tab-bar"></div>
+
     <div id="results"><div class="empty-msg">Enter routes and dates, then press Scan.</div></div>
 
     <div id="footer">
@@ -356,6 +377,36 @@
   g('btn-scan').addEventListener('click', startScan);
   g('btn-stop').addEventListener('click', () => { stopRequested = true; setStatus('Stopping…'); });
   g('btn-clear').addEventListener('click', clearAll);
+
+  // Disable auto-scroll when user scrolls up; re-enable when back at bottom
+  g('results').addEventListener('scroll', () => {
+    const el = g('results');
+    autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+  });
+
+  // ─── TABS ────────────────────────────────────────────────────────────────────
+  function ensureTab(routeKey) {
+    if (shadow.querySelector(`.tab[data-route="${CSS.escape(routeKey)}"]`)) return;
+    const btn = document.createElement('button');
+    btn.className = 'tab';
+    btn.dataset.route = routeKey;
+    btn.innerHTML = `${routeKey} <span class="tab-count">0</span>`;
+    btn.addEventListener('click', () => switchTab(routeKey));
+    g('tab-bar').appendChild(btn);
+    if (!activeTab) switchTab(routeKey);
+  }
+
+  function updateTabCount(routeKey) {
+    const count = Object.values(resultStore).filter(d => d[routeKey]?.length > 0).length;
+    const btn = shadow.querySelector(`.tab[data-route="${CSS.escape(routeKey)}"]`);
+    if (btn) btn.querySelector('.tab-count').textContent = count;
+  }
+
+  function switchTab(routeKey) {
+    activeTab = routeKey;
+    shadow.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.route === routeKey));
+    renderActiveTab();
+  }
 
   // ─── HELPERS ────────────────────────────────────────────────────────────────
   function fmt(d) { return d.toISOString().split('T')[0]; }
@@ -543,70 +594,67 @@
     resultStore[date][routeKey].push(...flights);
   }
 
-  function renderResults() {
+  function renderActiveTab() {
     const container = g('results');
-    if (!container) return;
+    if (!container || !activeTab) return;
+
+    const banner = container.querySelector('#scan-banner');
+    container.innerHTML = '';
+    if (banner) container.appendChild(banner);
 
     const allDates = Object.keys(resultStore).sort();
-    if (allDates.length === 0) {
-      container.innerHTML = '<div class="empty-msg">No availability found yet.</div>';
-      return;
+    for (const date of allDates) {
+      const flights = resultStore[date]?.[activeTab] ?? [];
+      const visible = flights.filter(f => enabledBrands.has(f.brandId));
+      if (visible.length === 0) continue;
+      container.appendChild(buildDateBlock(date, activeTab, flights));
     }
 
-    container.innerHTML = '';
-    for (const date of allDates) {
-      const block = document.createElement('div');
-      block.className = 'date-block';
-      block.dataset.date = date;
-
-      const header = document.createElement('div');
-      header.className = 'date-header';
-      header.textContent = formatDateHeader(date);
-      block.appendChild(header);
-
-      for (const [routeKey, flights] of Object.entries(resultStore[date])) {
-        block.appendChild(buildRouteRow(routeKey, flights, date));
-      }
-      container.appendChild(block);
+    if (!container.querySelector('.date-block') && !banner) {
+      container.innerHTML = '<div class="empty-msg">No results for this route.</div>';
     }
   }
 
   function addResultsIncremental(date, routeKey, flights) {
     storeResults(date, routeKey, flights);
+    ensureTab(routeKey);
+    updateTabCount(routeKey);
+
+    // Only update the DOM if this route is currently visible
+    if (routeKey !== activeTab) return;
 
     const container = g('results');
     if (!container) return;
 
-    // Remove empty message
     const msg = container.querySelector('.empty-msg');
     if (msg) msg.remove();
 
     let block = container.querySelector(`.date-block[data-date="${date}"]`);
     if (!block) {
-      block = document.createElement('div');
-      block.className = 'date-block';
-      block.dataset.date = date;
-
-      const header = document.createElement('div');
-      header.className = 'date-header';
-      header.textContent = formatDateHeader(date);
-      block.appendChild(header);
-
-      // Insert in sorted order
+      block = buildDateBlock(date, routeKey, resultStore[date][routeKey]);
       const existing = Array.from(container.querySelectorAll('.date-block'));
       const after = existing.find(el => el.dataset.date > date);
       if (after) container.insertBefore(block, after);
       else container.appendChild(block);
+    } else {
+      const existingRow = block.querySelector('.route-row');
+      if (existingRow) existingRow.remove();
+      block.appendChild(buildRouteRow(routeKey, resultStore[date][routeKey], date));
     }
 
-    // Update or add route row
-    const existingRow = block.querySelector(`[data-route="${routeKey}"]`);
-    if (existingRow) existingRow.remove();
+    if (autoScroll) container.scrollTop = container.scrollHeight;
+  }
 
-    // Merge with any existing stored flights (already storeResults'd above)
-    block.appendChild(buildRouteRow(routeKey, resultStore[date][routeKey], date));
-
-    container.scrollTop = container.scrollHeight;
+  function buildDateBlock(date, routeKey, flights) {
+    const block = document.createElement('div');
+    block.className = 'date-block';
+    block.dataset.date = date;
+    const header = document.createElement('div');
+    header.className = 'date-header';
+    header.textContent = formatDateHeader(date);
+    block.appendChild(header);
+    block.appendChild(buildRouteRow(routeKey, flights, date));
+    return block;
   }
 
   function formatDateHeader(dateStr) {
@@ -661,25 +709,7 @@
   }
 
   function applyFilters() {
-    shadow.querySelectorAll('.route-row').forEach(row => {
-      const routeKey = row.dataset.route;
-      const dateBlock = row.closest('.date-block');
-      const date = dateBlock?.dataset.date;
-      if (!date || !routeKey) return;
-      const flights = resultStore[date]?.[routeKey] ?? [];
-      const pillsWrap = row.querySelector('.pills');
-      if (!pillsWrap) return;
-      pillsWrap.innerHTML = '';
-      for (const flight of flights) {
-        if (!enabledBrands.has(flight.brandId)) continue;
-        pillsWrap.appendChild(buildPill(flight, routeKey, date));
-      }
-    });
-    // Hide date blocks where every route row has no visible pills
-    shadow.querySelectorAll('.date-block').forEach(block => {
-      const anyVisible = Array.from(block.querySelectorAll('.pills')).some(p => p.children.length > 0);
-      block.style.display = anyVisible ? '' : 'none';
-    });
+    renderActiveTab();
   }
 
   // ─── POPUP ───────────────────────────────────────────────────────────────────
@@ -758,6 +788,9 @@
     g('btn-stop').disabled = false;
     setProgress(0);
     Object.keys(resultStore).forEach(k => delete resultStore[k]);
+    activeTab = null;
+    autoScroll = true;
+    g('tab-bar').innerHTML = '';
     g('results').innerHTML = '<div id="scan-banner"><span class="spinner"></span>Scanning for availability…</div>';
 
     let errors = 0;
@@ -820,6 +853,9 @@
 
   function clearAll() {
     Object.keys(resultStore).forEach(k => delete resultStore[k]);
+    activeTab = null;
+    autoScroll = true;
+    g('tab-bar').innerHTML = '';
     g('results').innerHTML = '<div class="empty-msg">Enter routes and dates, then press Scan.</div>';
     setProgress(0);
     g('progress-bar').style.width = '0';
