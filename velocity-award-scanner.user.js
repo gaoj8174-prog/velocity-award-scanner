@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         Velocity Award Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      2.0
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
 // @match        https://book.virginaustralia.com/dx/VADX/*
-// @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @connect      book.virginaustralia.com
@@ -18,28 +17,39 @@
   const API_URL = 'https://book.virginaustralia.com/api/graphql';
   const DELAY_MS = 950;
 
-  // ─── SNIFF x-sabre-storefront FROM PAGE'S OWN REQUESTS ─────────────────────
-  // Inject into the page's real JS context (Tampermonkey runs in an isolated sandbox)
+  // ─── SNIFF ALL x-* / apollo* HEADERS FROM PAGE'S OWN REQUESTS ──────────────
+  // Tampermonkey runs in an isolated sandbox, so we inject into the real page context.
+  // Captured headers are stored in window.__va_headers (page-side) and mirrored to
+  // a DOM attribute for the sandbox to read.
   ;(function injectInterceptor() {
     const script = document.createElement('script');
     script.textContent = `
       (function() {
-        function storeVal(val) {
-          if (val) document.documentElement.setAttribute('data-va-storefront', val);
+        window.__va_headers = {};
+        function storeHeaders(h) {
+          var entries = h instanceof Headers ? Array.from(h.entries()) : Object.entries(h || {});
+          entries.forEach(function(e) {
+            var k = (e[0] || '').toLowerCase();
+            if (k.startsWith('x-') || k.startsWith('apollo')) {
+              window.__va_headers[e[0]] = e[1];
+            }
+          });
+          var sf = window.__va_headers['x-sabre-storefront'] || window.__va_headers['X-Sabre-Storefront'];
+          if (sf) document.documentElement.setAttribute('data-va-storefront', sf);
+          try { document.documentElement.setAttribute('data-va-headers', JSON.stringify(window.__va_headers)); } catch(e) {}
         }
         var _fetch = window.fetch;
         window.fetch = function(input, init) {
           var url = typeof input === 'string' ? input : (input && input.url) || '';
-          if (url.indexOf('/api/graphql') !== -1 && init && init.headers) {
-            var h = init.headers;
-            storeVal(h instanceof Headers ? h.get('x-sabre-storefront') : (h['x-sabre-storefront'] || h['X-Sabre-Storefront']));
-          }
+          if (url.indexOf('/api/graphql') !== -1 && init && init.headers) storeHeaders(init.headers);
           return _fetch.apply(this, arguments);
         };
-        var _xhr = XMLHttpRequest.prototype.setRequestHeader;
+        var _xhr = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function() { this.__isGraphql = arguments[1] && arguments[1].indexOf('/api/graphql') !== -1; return _xhr.apply(this, arguments); };
+        var _xhrSet = XMLHttpRequest.prototype.setRequestHeader;
         XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
-          if (name && name.toLowerCase() === 'x-sabre-storefront') storeVal(value);
-          return _xhr.call(this, name, value);
+          if (this.__isGraphql) { var k = (name||'').toLowerCase(); if (k.startsWith('x-') || k.startsWith('apollo')) { window.__va_headers[name] = value; try { document.documentElement.setAttribute('data-va-headers', JSON.stringify(window.__va_headers)); } catch(e) {} if (k === 'x-sabre-storefront') document.documentElement.setAttribute('data-va-storefront', value); } }
+          return _xhrSet.call(this, name, value);
         };
       })();
     `;
@@ -47,8 +57,15 @@
     script.remove();
   })();
 
+  function getCapturedHeaders() {
+    try {
+      const raw = document.documentElement.getAttribute('data-va-headers');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {};
+  }
+
   function getCapturedStorefront() {
-    // DOM attribute is written by the injected page-context script (shared across sandbox boundary)
     return document.documentElement.getAttribute('data-va-storefront') || 'VADX';
   }
   const BATCH_DAYS = 20;
@@ -95,7 +112,13 @@
       border-right: 1px solid #3a1a1a;
       transition: transform 0.25s ease;
     }
-    #root.collapsed { transform: translateY(calc(100% - 42px)); }
+    #panel-body {
+      display: flex; flex-direction: column; flex: 1; min-height: 0;
+      overflow: hidden;
+      max-height: 85vh;
+      transition: max-height 0.3s ease;
+    }
+    #root.collapsed #panel-body { max-height: 0; }
 
     /* ── header ── */
     #header {
@@ -187,8 +210,14 @@
     #status-text { font-size: 11px; color: #888; flex: 1; text-align: right; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
     /* ── progress bar ── */
-    #progress-wrap { height: 3px; background: #1e0c0c; flex-shrink: 0; }
+    @keyframes progress-shimmer {
+      0%   { opacity: 0.5; }
+      50%  { opacity: 1; }
+      100% { opacity: 0.5; }
+    }
+    #progress-wrap { height: 3px; background: #2a1010; flex-shrink: 0; }
     #progress-bar  { height: 3px; background: #c0392b; width: 0; transition: width 0.3s; }
+    #root.scanning #progress-bar { min-width: 6px; animation: progress-shimmer 1.4s ease infinite; }
 
     /* ── results ── */
     #results {
@@ -287,53 +316,55 @@
   root.innerHTML = `
     <div id="header">
       <span class="logo">✈</span>
-      <span class="title">Velocity Award Scanner <span style="font-size:10px;font-weight:400;color:#666;margin-left:4px">v1.4</span></span>
+      <span class="title">Velocity Award Scanner <span style="font-size:10px;font-weight:400;color:#666;margin-left:4px">v2.0</span></span>
       <span class="chevron">▲</span>
-    </div>
-
-    <div id="form-area">
-      <div class="row">
-        <div class="field">
-          <label>Origins (comma-separated)</label>
-          <input id="inp-from" type="text" placeholder="SYD,MEL" value="${load('va_from','SYD')}" style="text-transform:uppercase"/>
-        </div>
-        <button class="swap-btn" id="btn-swap" title="Swap">⇄</button>
-        <div class="field">
-          <label>Destinations (comma-separated)</label>
-          <input id="inp-to" type="text" placeholder="HND,NRT" value="${load('va_to','HND')}" style="text-transform:uppercase"/>
-        </div>
-      </div>
-      <div class="row">
-        <div class="field">
-          <label>From date</label>
-          <input id="inp-date-from" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_from', fmt(today))}"/>
-        </div>
-        <div class="field">
-          <label>To date</label>
-          <input id="inp-date-to" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_to', fmt(threeMonths))}"/>
-        </div>
-        <div class="field">
-          <label>Promo (optional)</label>
-          <input id="inp-promo" type="text" placeholder="e.g. CVX35" value="${load('va_promo','')}"/>
-        </div>
-      </div>
-    </div>
-
-    <div id="filters">
-      ${Object.entries(BRANDS).map(([id, b]) => `
-        <label class="filter-chip on" id="chip-${id}" style="background:${b.color};" data-brand="${id}">
-          <input type="checkbox" checked data-brand="${id}"/>
-          <span>${b.label}</span>
-          <span class="chip-name" style="font-weight:400;opacity:0.8">${b.name}</span>
-        </label>
-      `).join('')}
     </div>
 
     <div id="progress-wrap"><div id="progress-bar"></div></div>
 
-    <div id="tab-bar"></div>
+    <div id="panel-body">
+      <div id="form-area">
+        <div class="row">
+          <div class="field">
+            <label>Origins (comma-separated)</label>
+            <input id="inp-from" type="text" placeholder="SYD,MEL" value="${load('va_from','SYD')}" style="text-transform:uppercase"/>
+          </div>
+          <button class="swap-btn" id="btn-swap" title="Swap">⇄</button>
+          <div class="field">
+            <label>Destinations (comma-separated)</label>
+            <input id="inp-to" type="text" placeholder="HND,NRT" value="${load('va_to','HND')}" style="text-transform:uppercase"/>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>From date</label>
+            <input id="inp-date-from" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_from', fmt(today))}"/>
+          </div>
+          <div class="field">
+            <label>To date</label>
+            <input id="inp-date-to" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_to', fmt(threeMonths))}"/>
+          </div>
+          <div class="field">
+            <label>Promo (optional)</label>
+            <input id="inp-promo" type="text" placeholder="e.g. CVX35" value="${load('va_promo','')}"/>
+          </div>
+        </div>
+      </div>
 
-    <div id="results"><div class="empty-msg">Press Scan to search for availability.</div></div>
+      <div id="filters">
+        ${Object.entries(BRANDS).map(([id, b]) => `
+          <label class="filter-chip on" id="chip-${id}" style="background:${b.color};" data-brand="${id}">
+            <input type="checkbox" checked data-brand="${id}"/>
+            <span>${b.label}</span>
+            <span class="chip-name" style="font-weight:400;opacity:0.8">${b.name}</span>
+          </label>
+        `).join('')}
+      </div>
+
+      <div id="tab-bar"></div>
+
+      <div id="results"><div class="empty-msg">Press Scan to search for availability.</div></div>
+    </div>
 
     <div id="footer">
       <button class="btn btn-scan" id="btn-scan">Scan</button>
@@ -496,26 +527,20 @@
 }`
       });
 
-      GM_xmlhttpRequest({
+      fetch(API_URL, {
         method: 'POST',
-        url: API_URL,
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Origin': 'https://book.virginaustralia.com',
-          'Referer': 'https://book.virginaustralia.com/',
-          ...(getCapturedStorefront() ? { 'x-sabre-storefront': getCapturedStorefront() } : {}),
+          ...getCapturedHeaders(),
+          'x-sabre-storefront': getCapturedStorefront(),
         },
-        data: body,
-        onload: res => {
-          try {
-              const parsed = JSON.parse(res.responseText);
-            resolve(parsed);
-          }
-          catch (e) { reject(new Error('JSON parse error: ' + res.responseText.slice(0, 200))); }
-        },
-        onerror: () => reject(new Error('Network error'))
-      });
+        body,
+      }).then(res => {
+        if (!res.ok) return res.text().then(t => { throw new Error(`HTTP ${res.status}: ${t.slice(0, 120)}`); });
+        return res.json();
+      }).then(resolve).catch(reject);
     });
   }
 
@@ -784,6 +809,7 @@
 
     scanning = true;
     stopRequested = false;
+    root.classList.add('scanning');
     g('btn-scan').disabled = true;
     g('btn-stop').disabled = false;
     setProgress(0);
@@ -843,6 +869,7 @@
     );
 
     scanning = false;
+    root.classList.remove('scanning');
     g('btn-scan').disabled = false;
     g('btn-stop').disabled = true;
 
