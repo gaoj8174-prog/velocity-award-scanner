@@ -289,11 +289,11 @@
       <div class="row">
         <div class="field">
           <label>From date</label>
-          <input id="inp-date-from" type="date" value="${load('va_date_from', fmt(today))}"/>
+          <input id="inp-date-from" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_from', fmt(today))}"/>
         </div>
         <div class="field">
           <label>To date</label>
-          <input id="inp-date-to" type="date" value="${load('va_date_to', fmt(threeMonths))}"/>
+          <input id="inp-date-to" type="text" placeholder="YYYY-MM-DD" value="${load('va_date_to', fmt(threeMonths))}"/>
         </div>
         <div class="field">
           <label>Promo (optional)</label>
@@ -740,8 +740,10 @@
     const promo   = g('inp-promo').value.trim();
     const routes  = getRoutes();
 
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
     if (routes.length === 0) { setStatus('Enter at least one route.'); return; }
-    if (!fromVal || !toVal)  { setStatus('Set both dates.'); return; }
+    if (!fromVal || !toVal)  { setStatus('Set both dates (YYYY-MM-DD).'); return; }
+    if (!dateRe.test(fromVal) || !dateRe.test(toVal)) { setStatus('Dates must be YYYY-MM-DD format.', '#e05c5c'); return; }
     if (new Date(fromVal) > new Date(toVal)) { setStatus('From date must be before To date.'); return; }
 
     scanDates  = getDates(fromVal, toVal);
