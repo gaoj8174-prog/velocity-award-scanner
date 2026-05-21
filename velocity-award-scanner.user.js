@@ -103,7 +103,7 @@
 
     #root {
       position: fixed; bottom: 0; right: 0; z-index: 2147483647;
-      width: 520px; max-height: 92vh;
+      width: min(520px, 100vw); max-height: 92vh;
       display: flex; flex-direction: column;
       background: #120808; color: #e8e0e0;
       font-family: system-ui, -apple-system, sans-serif; font-size: 13px;
@@ -112,7 +112,9 @@
       border-top: 2px solid #c0392b;
       border-left: 1px solid #3a1a1a;
       border-right: 1px solid #3a1a1a;
-      transition: transform 0.25s ease;
+    }
+    @media (max-width: 520px) {
+      #root { left: 0; border-left: none; border-right: none; border-radius: 10px 10px 0 0; }
     }
     #panel-body {
       display: flex; flex-direction: column; flex: 1; min-height: 0;
