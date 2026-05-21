@@ -333,7 +333,7 @@
 
     <div id="tab-bar"></div>
 
-    <div id="results"><div class="empty-msg">Enter routes and dates, then press Scan.</div></div>
+    <div id="results"><div class="empty-msg">Press Scan to search for availability.</div></div>
 
     <div id="footer">
       <button class="btn btn-scan" id="btn-scan">Scan</button>
@@ -856,7 +856,7 @@
     activeTab = null;
     autoScroll = true;
     g('tab-bar').innerHTML = '';
-    g('results').innerHTML = '<div class="empty-msg">Enter routes and dates, then press Scan.</div>';
+    g('results').innerHTML = '<div class="empty-msg">Press Scan to search for availability.</div>';
     setProgress(0);
     g('progress-bar').style.width = '0';
     setStatus('');
