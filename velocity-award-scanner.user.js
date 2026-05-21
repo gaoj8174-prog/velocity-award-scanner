@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Velocity Award Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
 // @match        https://book.virginaustralia.com/dx/VADX/*
@@ -237,7 +237,7 @@
 
     /* ── popup ── */
     .popup-overlay {
-      position: fixed; inset: 0; z-index: 10;
+      position: fixed; inset: 0; z-index: 2147483647;
       background: rgba(0,0,0,0.6); display: flex;
       align-items: center; justify-content: center;
     }
