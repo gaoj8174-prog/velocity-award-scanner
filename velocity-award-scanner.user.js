@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Velocity Award Scanner
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Scans Virgin Australia Velocity reward flights across date ranges and multiple routes
 // @author       rickyg
 // @updateURL    https://github.com/gaoj8174-prog/velocity-award-scanner/raw/main/velocity-award-scanner.user.js
@@ -320,7 +320,7 @@
   root.innerHTML = `
     <div id="header">
       <span class="logo">✈</span>
-      <span class="title">Velocity Award Scanner <span style="font-size:10px;font-weight:400;color:#666;margin-left:4px">v2.0</span></span>
+      <span class="title">Velocity Award Scanner <span style="font-size:10px;font-weight:400;color:#666;margin-left:4px">v2.1</span></span>
       <span class="chevron">▲</span>
     </div>
 
@@ -432,9 +432,15 @@
   }
 
   function updateTabCount(routeKey) {
-    const count = Object.values(resultStore).filter(d => d[routeKey]?.length > 0).length;
+    const count = Object.values(resultStore).filter(d =>
+      d[routeKey]?.some(f => enabledBrands.has(f.brandId))
+    ).length;
     const btn = shadow.querySelector(`.tab[data-route="${CSS.escape(routeKey)}"]`);
     if (btn) btn.querySelector('.tab-count').textContent = count;
+  }
+
+  function updateAllTabCounts() {
+    shadow.querySelectorAll('.tab').forEach(t => updateTabCount(t.dataset.route));
   }
 
   function switchTab(routeKey) {
@@ -738,6 +744,7 @@
   }
 
   function applyFilters() {
+    updateAllTabCounts();
     renderActiveTab();
   }
 
